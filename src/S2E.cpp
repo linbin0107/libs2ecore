@@ -64,8 +64,12 @@ namespace s2e {
 
 using namespace std;
 
-S2E::S2E(const std::string &bitcodeLibraryDir) {
-    m_bitcodeLibraryDir = bitcodeLibraryDir;
+S2E::S2E(const std::string &bitcodeLibraryDir, int argc, char **argv) :
+		m_numTotalTests(0),
+		m_argc(argc),
+		m_argv(argv),
+		m_bitcodeLibraryDir(bitcodeLibraryDir) {
+
 }
 
 bool S2E::initialize(int argc, char **argv, TCGLLVMContext *tcgLLVMContext, const std::string &configFileName,
@@ -267,6 +271,39 @@ S2E::~S2E() {
     delete m_infoFileRaw;
     delete m_warningsFileRaw;
     delete m_debugFileRaw;
+}
+
+void S2E::processTestCase(const S2EExecutionState &state, const ConcreteInputs &inputs) {
+	unsigned id = ++m_numTotalTests;
+    KTest b;
+    b.numArgs = m_argc;
+    b.args = m_argv;
+    b.symArgvs = 0;
+    b.symArgvLen = 0;
+    b.numObjects = inputs.size();
+    b.objects = new KTestObject[b.numObjects];
+    assert(b.objects);
+    for (unsigned i=0; i<b.numObjects; i++) {
+      KTestObject *o = &b.objects[i];
+      o->name = const_cast<char*>(inputs[i].first.c_str());
+      o->numBytes = inputs[i].second.size();
+      o->bytes = new unsigned char[o->numBytes];
+      assert(o->bytes);
+      std::copy(inputs[i].second.begin(), inputs[i].second.end(), o->bytes);
+    }
+    if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
+        getWarningsStream(&state) << "unable to write output test case, losing it" << '\n';
+      //klee_warning("unable to write output test case, losing it");
+    }
+    for (unsigned i=0; i<b.numObjects; i++)
+      delete[] b.objects[i].bytes;
+    delete[] b.objects;
+}
+
+std::string S2E::getTestFilename(const std::string &suffix, unsigned id) {
+	std::stringstream filename;
+	filename << "test" << std::setfill('0') << std::setw(6) << id << '.' << suffix;
+	return filename.str();
 }
 
 std::string S2E::getOutputFilename(const std::string &fileName) {
@@ -641,7 +678,7 @@ void *get_s2e(void) {
 void s2e_initialize(int argc, char **argv, TCGLLVMContext *tcgLLVMContext, const char *s2e_config_file,
                     const char *s2e_output_dir, int setup_unbuffered_stream, int verbose, unsigned s2e_max_processes,
                     const char *bitcode_lib_dir) {
-    g_s2e = new s2e::S2E(bitcode_lib_dir);
+    g_s2e = new s2e::S2E(bitcode_lib_dir, argc, argv);
     if (!g_s2e->initialize(argc, argv, tcgLLVMContext, s2e_config_file ? s2e_config_file : "",
                            s2e_output_dir ? s2e_output_dir : "", setup_unbuffered_stream, verbose, s2e_max_processes)) {
         exit(-1);

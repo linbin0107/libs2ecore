@@ -12,6 +12,7 @@
 #undef NDEBUG
 
 #include <fstream>
+#include <klee/Internal/ADT/KTest.h>
 #include <klee/SolverFactory.h>
 #include <llvm/Support/raw_ostream.h>
 #include <map>
@@ -86,6 +87,13 @@ struct S2EShared {
 };
 
 class S2E : public klee::InterpreterHandler {
+private:
+    typedef std::pair<std::string, std::vector<unsigned char>> VarValuePair;
+    typedef std::vector<VarValuePair> ConcreteInputs;
+    unsigned m_numTotalTests;
+    int m_argc;
+    char **m_argv;
+
 protected:
     S2ESynchronizedObject<S2EShared> m_sync;
     ConfigFile *m_configFile;
@@ -138,8 +146,12 @@ protected:
     llvm::raw_ostream &getStream(llvm::raw_ostream &stream, const S2EExecutionState *state) const;
 
 public:
-    S2E(const std::string &bitcodeLibraryDir);
+    S2E(const std::string &bitcodeLibraryDir, int argc, char **argv);
     ~S2E();
+
+    // generate klee format test cases
+    void processTestCase(const S2EExecutionState &state, const ConcreteInputs &inputs);
+    std::string getTestFilename(const std::string &suffix, unsigned id);
 
     /** Construct S2E */
     bool initialize(int argc, char **argv, TCGLLVMContext *tcgLLVMContext, const std::string &configFileName,
